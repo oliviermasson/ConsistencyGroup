@@ -9,8 +9,10 @@ Purpose: Restore a Consistency Group snapshot on source in a cluster using ONTAP
 Usage: python3 restore_cg_snapshot.py [-h] -c cluster -cg cg_name -v svm_name -n snap_name -u API_USER -p API_PASS
                                       [-s src_path] [-d dst_path]
 By default it will search for an existing snapvault reltionship which protect this CG
-And create a reversed snapmirror restore relationship to revert active filesystem of this CG from the snapshot choosen
-You can also use this script to restore this CG on another existing volume
+And create a reversed snapmirror restore relationship to revert active filesystem of this CG from the snapshot choosen,
+for all the flexvol inside this CG
+You can also use this script to restore this CG on another existing volume, but in this case you must execute
+this script for all flexvol which compose this CG
 """
 import base64
 import argparse
