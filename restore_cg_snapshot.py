@@ -24,6 +24,7 @@ import requests
 import datetime
 import urllib3 as ur
 ur.disable_warnings()
+
 def check_job_status(
         cluster: str,
         job_status_url: str,
@@ -47,6 +48,7 @@ def check_job_status(
             job_status_url,
             job_status,
             headers_inc)
+
 def get_snapmirror_relationship(
         cluster: str,
         src_vol: str,
@@ -74,6 +76,7 @@ def get_snapmirror_relationship(
         "dst_path":smlist[0]['destination']['path']
     }
     return paths
+
 def get_cg_components(
         cluster: str,
         cg_name: str,
@@ -120,6 +123,7 @@ def get_cg_components(
         paths=get_snapmirror_relationship(cluster,vol['name'],svm_name,headers_inc)
         #print("actual source [{}] ---> dest [{}]".format(paths['src_path'],paths['dst_path']))
         restore_cg_snap(cluster,paths['dst_path'],paths['src_path'],snap_name,headers_inc)
+
 def restore_cg_snap(
         cluster: str,
         src_path: str,
@@ -201,6 +205,7 @@ def restore_cg_snap(
             exit(errormessage)
     else:
         print("Error failed to restore snapmirror relationship")
+        
 def parse_args() -> argparse.Namespace:
     """Parse the command line arguments from the user"""
     parser = argparse.ArgumentParser(

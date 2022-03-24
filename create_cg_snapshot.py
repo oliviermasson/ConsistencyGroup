@@ -18,6 +18,7 @@ import requests
 import datetime
 import urllib3 as ur
 ur.disable_warnings()
+
 def check_job_status(
         cluster: str,
         job_status_url: str,
@@ -39,6 +40,7 @@ def check_job_status(
             job_status_url,
             job_status,
             headers_inc)
+
 def check_cg(cluster: str, svm_name: str, cg_name: str, headers_inc: str):
     """ Get CG key"""
     url = "https://{}/api/application/consistency-groups?svm.name={}".format(
@@ -49,6 +51,7 @@ def check_cg(cluster: str, svm_name: str, cg_name: str, headers_inc: str):
         if i['name'] == cg_name:
             return i['uuid']
     return None
+
 def list_cg_snaps_details(
         cluster: str,
         cguuid: str,
@@ -59,6 +62,7 @@ def list_cg_snaps_details(
     response = requests.get(url, headers=headers_inc, verify=False)
     cgsnapdetails= dict(response.json())
     [print(key,':',value) for key,value in cgsnapdetails.items()]
+
 def list_cg_snaps(
         cluster: str,
         cguuid: str,
@@ -73,6 +77,7 @@ def list_cg_snaps(
         if snap['name'] == snap_name:
             return snap_name
     return None
+
 def create_cg_snap(
         cluster: str,
         svm_name: str,
