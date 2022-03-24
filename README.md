@@ -1,2 +1,4 @@
 # ConsistencyGroup
-Tools to manage ONTAP Consistency Group
+Python scripts to manage ONTAP Consistency Group snapshot
+  Create
+  Restore
