@@ -2,7 +2,7 @@
 #! /usr/bin/env python3
 """
 ONTAP REST API Sample Scripts
-This script was developed by NetApp to help demonstrate NetApp
+This script was developed to help demonstrate NetApp
 technologies.  This script is not officially supported as a
 standard NetApp product.
 Purpose: Restore a Consistency Group snapshot on source in a cluster using ONTAP REST API.
