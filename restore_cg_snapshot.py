@@ -5,14 +5,12 @@ ONTAP REST API Sample Scripts
 This script was developed by NetApp to help demonstrate NetApp
 technologies.  This script is not officially supported as a
 standard NetApp product.
-Purpose: Create a consistency group snapshot in a cluster using ONTAP REST API.
-Usage: python3 creeate_cg_snapshot.py [-h] -c CLUSTER -cg cg_name -vs SVM_NAME -n snap_name [-t snap_type application|crash] [-l snap_label]
-                                                                [-co snap_comment] [-u API_USER] [-p API_PASS]
-Copyright (c) 2020 NetApp, Inc. All Rights Reserved.
-Licensed under the BSD 3-Clause “New” or Revised” License (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-https://opensource.org/licenses/BSD-3-Clause
+Purpose: Restore a Consistency Group snapshot on source in a cluster using ONTAP REST API.
+Usage: python3 restore_cg_snapshot.py [-h] -c cluster -cg cg_name -v svm_name -n snap_name -u API_USER -p API_PASS
+                                      [-s src_path] [-d dst_path]
+By default it will search for an existing snapvault reltionship which protect this CG
+And create a reversed snapmirror restore relationship to revert active filesystem of this CG from the snapshot choosen
+You can also use this script to restore this CG on another existing volume
 """
 import base64
 import argparse
