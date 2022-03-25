@@ -261,15 +261,22 @@ if __name__ == "__main__":
         'content-type': "application/json",
         'accept': "application/json"
     }
-    get_cg_components(
-        ARGS.cluster,
-        ARGS.cg_name,
-        ARGS.svm_name,
-        ARGS.snap_name,
-        headers)
-    """ restore_cg_snap(
-        ARGS.cluster,
-        ARGS.src_path,
-        ARGS.dst_path,
-        ARGS.snap_name,
-        headers) """
+
+    if (ARGS.src_path is None or ARGS.dst_path is None):
+        """ restore to source volume based on existing snapmirror relationship available """
+        print("Restore to existing sources volumes")
+        get_cg_components(
+            ARGS.cluster,
+            ARGS.cg_name,
+            ARGS.svm_name,
+            ARGS.snap_name,
+            headers)
+    else:
+        """ need to improve this part with auto-provisionning and auto-creation of all necessary dest volume based on CG consitituent """
+        print("Restore to another existing volume")
+        restore_cg_snap(
+            ARGS.cluster,
+            ARGS.src_path,
+            ARGS.dst_path,
+            ARGS.snap_name,
+            headers)
