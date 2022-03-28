@@ -49,11 +49,12 @@ def check_job_status(
             job_status,
             headers_inc)
 
-def get_snapmirror_relationship(
+def get_snapmirror_destination_relationship_from_source(
         cluster: str,
         src_vol: str,
         src_svm: str,
-        headers_inc: str):
+        headers_inc: str,
+        return_only_volume_name: bool = False):
     """ get snapmirror relationship from a source volume and return destination_path """
     url = "https://{}/api/snapmirror/relationships".format(cluster)
     relationship_search = {
@@ -71,10 +72,13 @@ def get_snapmirror_relationship(
     smlist=response.json()['records']
     if len(smlist) > 1:
         exit("Multiple snapmirror relationship. Please check and choose the good one")
-    paths={
-        "src_path":smlist[0]['source']['path'],
-        "dst_path":smlist[0]['destination']['path']
-    }
+    if (return_only_volume_name == False):
+        paths={
+            "src_path":smlist[0]['source']['path'],
+            "dst_path":smlist[0]['destination']['path']
+        }
+    else:
+        paths={"src_path":smlist[0]['source']['path']}
     return paths
 
 def get_cg_components(
@@ -84,6 +88,7 @@ def get_cg_components(
         snap_name: str,
         headers_inc: str):
     """ get CG list and return UUID of searched CG"""
+
     """ search={
         "svm": {
             "name": svm_name
@@ -92,6 +97,7 @@ def get_cg_components(
             "name": cg_name
         }    
     } """
+
     url = "https://{}/api/application/consistency-groups".format(cluster)
     response = requests.get(
         url,
@@ -120,9 +126,132 @@ def get_cg_components(
     #print("CG [{}] contains following volume".format(cg_name))
     for vol in volumes:
         #print(vol['name'])
-        paths=get_snapmirror_relationship(cluster,vol['name'],svm_name,headers_inc)
+        paths=get_snapmirror_destination_relationship_from_source(cluster,vol['name'],svm_name,headers_inc)
         #print("actual source [{}] ---> dest [{}]".format(paths['src_path'],paths['dst_path']))
         restore_cg_snap(cluster,paths['dst_path'],paths['src_path'],snap_name,headers_inc)
+
+def check_dst_svm(
+        cluster: str,
+        svm: str,
+        headers_inc: str):
+    url = "https://{}/api/svm/svms".format(cluster)
+    response = requests.get(
+        url,
+        headers=headers_inc,
+        params={"name":svm},
+        verify=False
+    )
+    if len(response.json()['records'])>0:
+        return True
+    else:
+        exit("Error SVM [{}] does not exists on cluster [{}]".format(svm,cluster))
+
+def check_svm_peered(
+        cluster: str,
+        svm1: str,
+        svm2: str,
+        headers_inc: str):
+    url = "https://{}/api/svm/peers".format(cluster)
+    response = requests.get(
+        url,
+        headers=headers_inc,
+        params={"svm.name":svm1,"peer.svm.name":svm2},
+        verify=False
+    )
+    if len(response.json()['records'])>0:
+        return True
+    else:
+        exit("Error SVM [{}] and [{}] are not peered".format(svm1,svm2))
+
+def get_cluster_name(
+        cluster: str,
+        headers_inc: str):
+    url = "https://{}/api/cluster".format(cluster)
+    response = requests.get(url,headers=headers_inc,verify=False)
+    if response.status_code == 200:
+        return response.json()['name']
+    else:
+        exit("Error communicating with cluster [{}]".format(cluster))
+    
+
+def check_cluster_peered(
+        cluster1: str,
+        cluster2: str,
+        headers_inc: str):
+    url = "https://{}/api/cluster/peers".format(cluster1)
+    response = requests.get(url,headers=headers_inc,verify=False)
+    if len(response.json()['records'])>0:
+        peered=response.json()['records']
+        for cluster_peered in peered:
+            if (cluster_peered['name'] == get_cluster_name(cluster2,headers_inc)):
+                return True
+    else:
+        exit("Error Cluster [{}] and [{}] are not peered".format(cluster1,cluster2))
+
+def restore_alternate_cg_snap(
+        cluster: str,
+        cg_name: str,
+        svm_name: str,
+        dst_cg_name: str,
+        dst_vol: str,
+        dst_svm_name: str,
+        dst_cluster: str,
+        snap_name: str,
+        headers_inc: str):
+    check_dst_svm(dst_cluster,dst_svm_name,headers_inc)
+    if (cluster != dst_cluster):
+        """ must check if Cluster are peered """
+        check_cluster_peered(cluster,dst_cluster,headers_inc)
+    if (dst_svm_name != svm_name):
+        """ must check if SVM are peered """
+        check_svm_peered(cluster,svm_name,dst_svm_name,headers_inc)
+
+    """ retreive CG source UUID """
+    search={
+        "svm.name": svm_name,
+        "name": cg_name
+    }
+    url = "https://{}/api/application/consistency-groups".format(cluster)
+    response = requests.get(
+        url,
+        params=search,
+        headers=headers_inc,
+        verify=False
+    )
+    cglist=dict(response.json())['records']
+    for cg in cglist:
+        if cg['name'] == cg_name:
+            cguuid=cg['uuid']
+            break
+
+    """ Get CG detail from CG uuid"""
+    url = "https://{}/api/application/consistency-groups/{}".format(cluster,cguuid)
+    options={
+        "fields": "**"
+    }
+    response = requests.get(
+        url,
+        headers=headers_inc,
+        params=options,
+        verify=False
+    )
+    cgdetail=response.json()
+    volumes=cgdetail['volumes']
+    source_components=[]
+    dest_components=[]
+    index=1
+    for vol in volumes:
+        #source_components.append(vol['name'])
+        source_components.append(get_snapmirror_destination_relationship_from_source(cluster,vol['name'],svm_name,headers_inc,True))
+        dest_components.append("{}{}".format(dst_vol,index))
+        index+=1
+    print(source_components)
+    print(dest_components)
+
+    """ create snapmirror restore relationship with consistency group component and auto-provision """
+    relationship_details={
+        "source.path": "{}:/cg/{}".format(svm_name)
+    }
 
 def restore_cg_snap(
         cluster: str,
@@ -130,6 +259,7 @@ def restore_cg_snap(
         dst_path: str,
         snap_name: str,
         headers_inc: str):
+    """ create a snapmirror restore relationship beetwen src_path and dst_path provided"""
     relationship_data = {
         "source": {
             "path": src_path
@@ -175,6 +305,7 @@ def restore_cg_snap(
     restore_detail = {
         "source_snapshot": snap_name
     }
+    """ Initiate RST transfer for the existing snapmirror relationship """
     url2 = "https://{}/api/snapmirror/relationships/{}/transfers".format(cluster,relationship_uuid)
     restore_return = requests.post(
         url2,
@@ -225,7 +356,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "-n",
         "--snap_name",
-        default="application",
         help="Snapshot name to restore to. Without will restore to the last snapshot available")
     parser.add_argument(
         "-v",
@@ -235,6 +365,22 @@ def parse_args() -> argparse.Namespace:
         "-cg",
         "--cg_name",
         help="consistency group name")
+    parser.add_argument(
+        "-dav",
+        "--dst_vol",
+        help="destination volume name. Will suffix with digit for each consistency group component\r\nThis argument is only use to restore into anternate volume")
+    parser.add_argument(
+        "-dcg",
+        "--dst_cg_name",
+        help="destination consistency group name. If Null will be <source cg name>_dst\r\nThis argument is only use to restore into anternate volume")
+    parser.add_argument(
+        "-dv",
+        "--dst_svm_name",
+        help="destination svm name. If null will be <source svm name>_dst.\r\nThis SVM must aleady exists and must be already peered with source SVM.\r\nThis argument is only use to restore into anternate volume")
+    parser.add_argument(
+        "-dc",
+        "--dst_cluster",
+        help="destination cluster name. If null will be same cluster as source cluster.\r\nThis cluster must be already peered with source cluster.\r\nThis argument is only use to restore into anternate volume")
     parser.add_argument(
         "-u",
         "--api_user",
@@ -262,13 +408,32 @@ if __name__ == "__main__":
         'accept': "application/json"
     }
 
-    if (ARGS.src_path is None or ARGS.dst_path is None):
+    if ( (ARGS.src_path is None or ARGS.dst_path is None) and ARGS.dst_vol is None):
         """ restore to source volume based on existing snapmirror relationship available """
         print("Restore to existing sources volumes")
         get_cg_components(
             ARGS.cluster,
             ARGS.cg_name,
             ARGS.svm_name,
+            ARGS.snap_name,
+            headers)
+    elif (ARGS.dst_vol is not None):
+        """ restore to destination volume with auto-provision """   
+        print("Restore to alternate volumes")
+        if (ARGS.dst_cg_name is None):
+            ARGS.dst_cg_name = "{}_dst".format(ARGS.cg_name)
+        if (ARGS.dst_cluster is None):
+            ARGS.dst_cluster = ARGS.cluster
+        if (ARGS.dst_svm_name is None):
+            ARGS.dst_svm_name = ARGS.svm_name
+        restore_alternate_cg_snap(
+            ARGS.cluster,
+            ARGS.cg_name,
+            ARGS.svm_name,
+            ARGS.dst_cg_name,
+            ARGS.dst_vol,
+            ARGS.dst_svm_name,
+            ARGS.dst_cluster,
             ARGS.snap_name,
             headers)
     else:
