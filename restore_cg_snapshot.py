@@ -6,7 +6,7 @@ This script was developed to help demonstrate NetApp
 technologies.  This script is not officially supported as a
 standard NetApp product.
 Purpose: Restore a Consistency Group snapshot on source in a cluster using ONTAP REST API.
-Usage: python3 restore_cg_snapshot.py [-h] -c cluster -cg cg_name -v svm_name -n snap_name -u API_USER -p API_PASS
+Usage: python3 restore_cg_snapshot.py [-h] -c cluster -cg cg_name -sv svm_name -n snap_name -u API_USER -p API_PASS
                                       [-s src_path] [-d dst_path]
 By default it will search for an existing snapvault reltionship which protect this CG
 And create a reversed snapmirror restore relationship to revert active filesystem of this CG from the snapshot choosen,
@@ -81,23 +81,15 @@ def get_snapmirror_destination_relationship_from_source(
         paths={"src_path":smlist[0]['source']['path']}
     return paths
 
-def get_cg_components(
+def restore_cg_components(
         cluster: str,
         cg_name: str,
         svm_name: str,
         snap_name: str,
         headers_inc: str):
-    """ get CG list and return UUID of searched CG"""
+    """ restore CG snapshot to original location """
 
-    """ search={
-        "svm": {
-            "name": svm_name
-        },
-        "consistency_groups": {
-            "name": cg_name
-        }    
-    } """
-
+    """ Get CG UUID """
     url = "https://{}/api/application/consistency-groups".format(cluster)
     response = requests.get(
         url,
@@ -110,6 +102,7 @@ def get_cg_components(
         if cg['name'] == cg_name:
             cguuid=cg['uuid']
             break
+
     """ Get CG detail with uuid"""
     url = "https://{}/api/application/consistency-groups/{}".format(cluster,cguuid)
     options={
@@ -124,16 +117,18 @@ def get_cg_components(
     cgdetail=response.json()
     volumes=cgdetail['volumes']
     #print("CG [{}] contains following volume".format(cg_name))
+    """ for each CG component get existing snapmirror relationship to performe snapmirror Restore """
     for vol in volumes:
         #print(vol['name'])
-        paths=get_snapmirror_destination_relationship_from_source(cluster,vol['name'],svm_name,headers_inc)
-        #print("actual source [{}] ---> dest [{}]".format(paths['src_path'],paths['dst_path']))
-        restore_cg_snap(cluster,paths['dst_path'],paths['src_path'],snap_name,headers_inc)
+        vaultpaths=get_snapmirror_destination_relationship_from_source(cluster,vol['name'],svm_name,headers_inc)
+        #print("actual source [{}] ---> dest [{}]".format(vaultpaths['src_path'],vaultpaths['dst_path']))
+        restore_cg_snap(cluster,vaultpaths['dst_path'],vaultpaths['src_path'],snap_name,headers_inc)
 
 def check_dst_svm(
         cluster: str,
         svm: str,
         headers_inc: str):
+    """ check if SVM exist """
     url = "https://{}/api/svm/svms".format(cluster)
     response = requests.get(
         url,
@@ -151,6 +146,7 @@ def check_svm_peered(
         svm1: str,
         svm2: str,
         headers_inc: str):
+    """ check if SVM are peered """
     url = "https://{}/api/svm/peers".format(cluster)
     response = requests.get(
         url,
@@ -166,6 +162,7 @@ def check_svm_peered(
 def get_cluster_name(
         cluster: str,
         headers_inc: str):
+    """ check if cluster exists """
     url = "https://{}/api/cluster".format(cluster)
     response = requests.get(url,headers=headers_inc,verify=False)
     if response.status_code == 200:
@@ -173,11 +170,11 @@ def get_cluster_name(
     else:
         exit("Error communicating with cluster [{}]".format(cluster))
     
-
 def check_cluster_peered(
         cluster1: str,
         cluster2: str,
         headers_inc: str):
+    """ check if Cluster are peered """
     url = "https://{}/api/cluster/peers".format(cluster1)
     response = requests.get(url,headers=headers_inc,verify=False)
     if len(response.json()['records'])>0:
@@ -198,12 +195,13 @@ def restore_alternate_cg_snap(
         dst_cluster: str,
         snap_name: str,
         headers_inc: str):
-    check_dst_svm(dst_cluster,dst_svm_name,headers_inc)
+    """ Restore CG to alternate auto-provisionned volume """
+
+    if (dst_svm_name != svm_name):
+        check_dst_svm(dst_cluster,dst_svm_name,headers_inc)
     if (cluster != dst_cluster):
-        """ must check if Cluster are peered """
         check_cluster_peered(cluster,dst_cluster,headers_inc)
     if (dst_svm_name != svm_name):
-        """ must check if SVM are peered """
         check_svm_peered(cluster,svm_name,dst_svm_name,headers_inc)
 
     """ retreive CG source UUID """
@@ -240,18 +238,25 @@ def restore_alternate_cg_snap(
     source_components=[]
     dest_components=[]
     index=1
+    """ for each CG component get the existing destination snapvault volume """
+    # must determine the existing dst cluster from which to run the snapmirror restore
+    # check if no snap_name are provided, to restore the last snapshot available
+    # correct var dst_path and add to it the existing destination svm found from snapmirror relationship destination
     for vol in volumes:
         #source_components.append(vol['name'])
-        source_components.append(get_snapmirror_destination_relationship_from_source(cluster,vol['name'],svm_name,headers_inc,True))
-        dest_components.append("{}{}".format(dst_vol,index))
+        # source_components.append(get_snapmirror_destination_relationship_from_source(cluster,vol['name'],svm_name,headers_inc,True))
+        # dest_components.append("{}{}".format(dst_vol,index))
+        vaultpaths=get_snapmirror_destination_relationship_from_source(cluster,vol['name'],svm_name,headers_inc)
+        src_path=vaultpaths['dst_path']
+        dst_path="{}{}".format(dst_vol,index)
+        restore_cg_snap(cluster,src_path,dst_path,snap_name,headers_inc)
         index+=1
-    print(source_components)
-    print(dest_components)
+        # print(source_components)
+        # print(dest_components)
 
-    """ create snapmirror restore relationship with consistency group component and auto-provision """
-    relationship_details={
-        "source.path": "{}:/cg/{}".format(svm_name)
-    }
+        """ create snapmirror restore relationship with consistency group component and auto-provision """
+
+
 
 def restore_cg_snap(
         cluster: str,
@@ -259,7 +264,8 @@ def restore_cg_snap(
         dst_path: str,
         snap_name: str,
         headers_inc: str):
-    """ create a snapmirror restore relationship beetwen src_path and dst_path provided"""
+    """ create a snapmirror restore relationship beetwen src_path and dst_path provided """
+    """ SVM peer and Cluster peer must already be confirmed """
     relationship_data = {
         "source": {
             "path": src_path
@@ -271,7 +277,8 @@ def restore_cg_snap(
             #"path": dst_path,
             #"consistency_group_volumes": "cgvol1,cgvol2,cgvol3,cgvol4"
         },
-        "restore": True
+        "restore": True,
+        "create_destination.enabled": True
     }
     url = "https://{}/api/snapmirror/relationships/".format(cluster)
     response = requests.post(
@@ -358,9 +365,9 @@ def parse_args() -> argparse.Namespace:
         "--snap_name",
         help="Snapshot name to restore to. Without will restore to the last snapshot available")
     parser.add_argument(
-        "-v",
+        "-sv",
         "--svm_name",
-        help="svm name")
+        help="source svm name")
     parser.add_argument(
         "-cg",
         "--cg_name",
@@ -411,7 +418,7 @@ if __name__ == "__main__":
     if ( (ARGS.src_path is None or ARGS.dst_path is None) and ARGS.dst_vol is None):
         """ restore to source volume based on existing snapmirror relationship available """
         print("Restore to existing sources volumes")
-        get_cg_components(
+        restore_cg_components(
             ARGS.cluster,
             ARGS.cg_name,
             ARGS.svm_name,

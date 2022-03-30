@@ -33,10 +33,10 @@ def check_job_status(
         headers_inc: str):
     """ Check job status"""
     if job_status['state'] == "failure":
-        print("Snapmirror job failed due to :{}".format(job_status['message']))
+        print("Snapmirror job failed reason [{}]".format(job_status['message']))
         exit("Error : job state failure")
     elif job_status['state'] == "success":
-        print("Snapmirror job end successfully")
+        #print("Snapmirror job end successfully")
         return job_status['description'].split('/')[-1]
     else:
         job_response = requests.get(job_status_url, headers=headers_inc, verify=False)
@@ -213,6 +213,7 @@ def protect_cg(
     index=1
 
     """ create destination snaplock volumes """
+    print("Auto-Provision necessary destination snaplock volume")
     for vol in volumes:
         source_components.append(vol['name'])
         dst_size=int(vol['space']['size']*1.20)   # add 20% more size on dst volume too keep snapshot retention.
@@ -225,6 +226,7 @@ def protect_cg(
         index+=1
 
         """ Provision dest volumes """
+        print("Create destination volume [{}]".format(dst_svm_name))
         url2 = "https://{}/api/storage/volumes".format(cluster)
         vol_detail = {
             "size": dst_size,
@@ -272,12 +274,13 @@ def protect_cg(
         """ create snapmirror lockvault relationship """
         src_path = "{}:{}".format(src_svm_name,vol['name'])
         dst_path = "{}:{}_lck".format(dst_svm_name,vol['name'])
+        print("Create snapvault to snaplock relationship [{}] ---> [{}]".format(src_path,dst_path))
         relationship_detail={
             "source": {
                 "path": src_path},
             "destination" : {
-                #"path": dst_path}
-                "path": "svm2_cluster1:testdp"}
+                "path": dst_path}
+                #"path": "svm2_cluster1:testdp"}
         }
         url3 = "https://{}/api/snapmirror/relationships".format(dst_cluster) 
         response3 = requests.post(
@@ -287,7 +290,7 @@ def protect_cg(
             verify=False
         )
         if response3.status_code == 202:
-            print("Accepted")
+            #print("Accepted")
             url_text = response3.json()
             #url_text['job']['uuid']
             job_status_url = "https://{}/{}".format(dst_cluster,url_text['job']['_links']['self']['href'])
@@ -308,10 +311,10 @@ def protect_cg(
             exit(0)
         
         """ Modify SM relationship policy and initialize """
-        modify_sm_policy(dst_cluster,policyuuid,relationship_uuid,None,headers_inc)
-        modify_sm_policy(dst_cluster,None,relationship_uuid,"snapmirrored",headers_inc)
+        #modify_sm_policy(dst_cluster,policyuuid,relationship_uuid,None,headers_inc)
+        #modify_sm_policy(dst_cluster,None,relationship_uuid,"snapmirrored",headers_inc)
         """ initialize lockvault relationship """
-        url4 = "https://{}/api/snapmirror/relationships/{}/transfers".format(dst_cluster,relationship_uuid)
+        """ url4 = "https://{}/api/snapmirror/relationships/{}/transfers".format(dst_cluster,relationship_uuid)
         initialize_return = requests.post(
             url4,
             headers=headers_inc,
@@ -339,7 +342,7 @@ def protect_cg(
                 errormessage="Failed to initialize snapmirror relationship"
                 exit(errormessage)
         else:
-            print("Error failed to initialize snapmirror relationship")
+            print("Error failed to initialize snapmirror relationship") """
 
 def parse_args() -> argparse.Namespace:
     """Parse the command line arguments from the user"""
